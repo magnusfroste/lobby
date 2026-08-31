@@ -17,7 +17,11 @@ const store = require('./store');
 const SITES_DIR = process.env.SITES_DIR || path.join(__dirname, 'sites');
 const SEED_DIR = '/seed';
 const PORT = parseInt(process.env.PORT) || 8080;
-const DEFAULT_SITE = process.env.DEFAULT_SITE || 'default';
+// Unknown hostnames answer 404. A catch-all is available by naming a file in
+// DEFAULT_SITE, but it is not the default behaviour: with a wildcard route
+// every possible subdomain reaches this process, so falling back silently
+// means a typo in a link always renders a page and never a mistake.
+const DEFAULT_SITE = process.env.DEFAULT_SITE || '';
 // Writing a site publishes it, so the MCP endpoint stays closed until an
 // operator sets a token. Absent one there is nothing to guess at.
 const API_TOKEN = process.env.LOBBY_API_TOKEN || '';
@@ -51,7 +55,7 @@ function findSiteFile(host) {
     // www.example.com falls back to example.com, so one file serves both.
     if (name.startsWith('www.')) candidates.push(`${name.slice(4)}.md`);
   }
-  candidates.push(`${DEFAULT_SITE}.md`);
+  if (DEFAULT_SITE) candidates.push(`${DEFAULT_SITE}.md`);
   for (const c of candidates) {
     const p = path.join(SITES_DIR, c);
     if (fs.existsSync(p) && fs.statSync(p).isFile()) return p;
@@ -81,6 +85,22 @@ ${bodyHtml}
 ${meta.footer ? `<footer>${escapeHtml(meta.footer)}</footer>` : ''}
 </body>
 </html>`;
+}
+
+// A missing site is a real 404, and the page says which hostname was asked
+// for — the useful fact when a link is wrong. An admin who is signed in gets
+// the one thing they would otherwise go looking for: a link that creates it.
+function notFound(req, res) {
+  const host = siteNameFor(req.headers.host) || '';
+  const canCreate = host && admin.enabled() && admin.isLoggedIn(req);
+  const body = `<section class="block hero">
+    <p class="eyebrow">404</p>
+    <h1>No site lives here.</h1>
+    <h2>Nothing is published for <code>${escapeHtml(host || 'this hostname')}</code>.</h2>
+    ${canCreate ? `<p class="actions"><a class="btn btn-primary" href="/admin/edit?host=${encodeURIComponent(host)}&new=1">Create this site</a></p>` : ''}
+  </section>`;
+  res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
+  res.end(page({ title: `No site for ${host}` }, body, host));
 }
 
 const server = http.createServer((req, res) => {
@@ -119,10 +139,7 @@ const server = http.createServer((req, res) => {
   }
 
   const file = findSiteFile(req.headers.host);
-  if (!file) {
-    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
-    return res.end(`No site for ${req.headers.host || 'this host'}\n`);
-  }
+  if (!file) return notFound(req, res);
 
   // Serving the source verbatim is the point of the format, not a debug hatch:
   // an agent or an LLM reads the same text a human edits.

@@ -74,7 +74,7 @@ docker build -t lobby . && docker run -p 8080:8080 lobby
 | --- | --- | --- |
 | `PORT` | `8080` | Port to listen on |
 | `SITES_DIR` | `/sites` | Where the markdown files live |
-| `DEFAULT_SITE` | `default` | File served when no hostname matches |
+| `DEFAULT_SITE` | *(unset)* | Optional catch-all site. Unset means an unknown hostname gets a 404 |
 | `LOBBY_API_TOKEN` | *(unset)* | Bearer token for `/mcp`. Unset means the endpoint is off |
 | `LOBBY_ADMIN_PASSWORD` | *(unset)* | Password for `/admin`. Unset means the admin is off |
 | `LOBBY_ADMIN_USER` | `admin` | Admin username |
@@ -144,6 +144,10 @@ missing, so a redeploy never overwrites a site you have edited.
   lowercased, port stripped, restricted to what a domain may contain. A `Host`
   of `../../etc/passwd` gets the default site, not a file read.
 - `www.example.com` falls back to `example.com.md`, so one file serves both.
+- An unknown hostname gets a real 404. Behind a wildcard route every possible
+  subdomain reaches this process, so a silent fallback would render a page for
+  every mistyped link and never a mistake. Set `DEFAULT_SITE` to opt into a
+  catch-all.
 - No client-side JavaScript. The page renders on arrival, which is what makes
   it readable by crawlers and language models.
 
