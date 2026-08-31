@@ -113,13 +113,14 @@ function listPage() {
   const domains = store.configuredDomains();
   const haveFile = new Set(sites.map(s => s.host));
 
+  const fallback = store.fallbackSite();
   const rows = sites.map(s => {
-    const live = domains.length === 0 ? null : domains.includes(s.host);
-    const tag = s.host === 'default'
+    const live = store.isRouted(s.host, domains);
+    const tag = s.host === fallback
       ? '<span class="tag">fallback</span>'
       : live === null ? ''
       : live ? '<span class="tag live">live</span>'
-             : '<span class="tag nodomain">no domain</span>';
+             : '<span class="tag nodomain">not routed</span>';
     return `<tr>
       <td class="host"><a href="/admin/edit?host=${encodeURIComponent(s.host)}">${esc(s.host)}</a></td>
       <td>${esc(s.title)}</td>
@@ -131,7 +132,9 @@ function listPage() {
   // A domain the hotel answers to with no file behind it is the failure that
   // is hardest to notice: the visitor gets the default site and nothing looks
   // broken. Listing it is the whole reason the admin knows about domains.
-  const missing = domains.filter(d => !haveFile.has(d)).map(d => `<tr>
+  // A wildcard is not a missing site — it is the thing that makes sites
+  // possible without configuration, so it is never listed as one.
+  const missing = domains.filter(d => !d.startsWith('*.') && !haveFile.has(d)).map(d => `<tr>
       <td class="host">${esc(d)}</td><td class="note">routed here, no file yet</td>
       <td><span class="tag nofile">no file</span></td>
       <td><a class="btn ghost" href="/admin/edit?host=${encodeURIComponent(d)}&amp;new=1">Create</a></td>

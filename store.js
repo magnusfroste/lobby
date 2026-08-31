@@ -113,7 +113,43 @@ function remove(host) {
 // knowable from inside the container without being told.
 function configuredDomains() {
   const raw = process.env.AGENTHOTEL_DOMAINS || process.env.LOBBY_DOMAINS || '';
-  return String(raw).split(/[,\s]+/).map(h => safeHost(h)).filter(Boolean);
+  return String(raw).split(/[,\s]+/).map(entry => {
+    // Wildcards belong in this list — they are how a hotel serves a site with
+    // no configuration at all. safeHost rejects the asterisk because a
+    // hostname must never become one, so the prefix is checked separately and
+    // put back rather than validated away.
+    const value = String(entry || '').trim().toLowerCase();
+    if (value.startsWith('*.')) {
+      const rest = safeHost(value.slice(2));
+      return rest ? `*.${rest}` : null;
+    }
+    return safeHost(value);
+  }).filter(Boolean);
 }
 
-module.exports = { list, read, write, remove, safeHost, versionOf, sitesDir, configuredDomains };
+// Is this site actually reachable? A hostname may be routed here by name, or
+// swept up by a wildcard — which is the normal case once a hotel is set up,
+// since a wildcard is what removes the per-site configuration step. Comparing
+// names exactly marked every wildcard-served site as unrouted, which is the
+// opposite of the truth and exactly the reassurance the list exists to give.
+function isRouted(host, domains = configuredDomains()) {
+  if (!domains.length) return null;            // nothing to compare against
+  if (domains.includes(host)) return true;
+  return domains.some(d => {
+    if (!d.startsWith('*.')) return false;
+    const suffix = d.slice(1);                 // "*.example.com" -> ".example.com"
+    if (!host.endsWith(suffix)) return false;
+    // A wildcard covers one label: *.example.com matches a.example.com but
+    // not a.b.example.com, which is how Caddy and Cloudflare read it too.
+    return !host.slice(0, host.length - suffix.length).includes('.');
+  });
+}
+
+// The catch-all is opt-in, so a file is only the fallback when it is named as
+// one. Labelling default.md "fallback" after DEFAULT_SITE was turned off told
+// the operator a file was serving traffic that nothing could reach.
+function fallbackSite() {
+  return process.env.DEFAULT_SITE || '';
+}
+
+module.exports = { list, read, write, remove, safeHost, versionOf, sitesDir, configuredDomains, isRouted, fallbackSite };

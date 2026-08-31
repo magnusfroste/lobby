@@ -263,7 +263,7 @@ const renderers = {
     }
 
     const cards = list.map(s => {
-      const live = domains.length === 0 || domains.includes(s.host);
+      const live = store.isRouted(s.host, domains) !== false;
       // Only a signed-in admin is offered the destructive action, and the
       // form posts to the admin route, which checks the session again. The
       // button being hidden is a courtesy, not the control.
