@@ -36,6 +36,11 @@ directive still renders its words: a typo in a block name costs you the
 layout, never the content.
 ::
 
+::sites{title="Guests currently checked in" hide="example.local"}
+Every site below is a markdown file in this same container. Signed in as admin,
+each card can be edited or removed from here.
+::
+
 ::cta
 ## Want a room?
 

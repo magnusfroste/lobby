@@ -49,6 +49,12 @@ Every batch is pull-tested and stamped.
 | `::two-column` | Text beside an image. `reverse=true` flips it. Alias: `::split` |
 | `::cta` | A boxed invitation, centred |
 | `::text` | Everything else |
+| `::sites` | A card for every site this hotel serves. `title=` heads it, `hide=` omits hostnames |
+
+`::sites` is a directive rather than a built-in page so a landing page opts in —
+a customer's site should not list its neighbours just because they share a
+container. Signed in as admin, each card gains an edit link and a delete
+button.
 
 A link written `[Label](/where){.primary}` becomes a button (`.primary`,
 `.ghost`). An unknown directive still renders its words — a typo in a block

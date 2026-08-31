@@ -144,7 +144,8 @@ function listPage() {
     </table>
     <div class="row">
       <form method="get" action="/admin/edit" class="row" style="margin:0">
-        <input name="host" placeholder="new-site.example.com" style="width:260px">
+        <input name="host" placeholder="new-site.example.com" style="width:250px" required>
+        <input name="title" placeholder="Title (optional)" style="width:230px">
         <input type="hidden" name="new" value="1">
         <button class="btn" type="submit">New site</button>
       </form>
@@ -201,14 +202,23 @@ function handle(req, res, url, body) {
     const f = form(body);
     if (f.user === adminUser() && sameSecret(f.password || '', process.env.LOBBY_ADMIN_PASSWORD)) {
       const token = newSession();
+      // Secure only when the request actually arrived over TLS. Setting it
+      // unconditionally makes the cookie unsendable on a plain-HTTP install,
+      // so signing in appears to succeed and then silently does nothing.
+      const https = req.headers['x-forwarded-proto'] === 'https' || !!req.socket.encrypted;
       return redirect(res, '/admin', {
-        'Set-Cookie': `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MS / 1000}; Secure`
+        'Set-Cookie': `${COOKIE}=${token}; HttpOnly; SameSite=Strict; Path=/; Max-Age=${SESSION_MS / 1000}${https ? '; Secure' : ''}`
       });
     }
     return send(res, 401, loginPage('Wrong user or password.'));
   }
 
-  if (!isLoggedIn(req)) return send(res, 200, loginPage(null));
+  if (!isLoggedIn(req)) {
+    // A GET is someone arriving, so show the login page. A POST is an action
+    // that did not happen, and answering 200 would let a caller believe it
+    // did.
+    return send(res, req.method === 'POST' ? 401 : 200, loginPage(null));
+  }
 
   if (p === '/admin/logout' && req.method === 'POST') {
     return redirect(res, '/admin', { 'Set-Cookie': `${COOKIE}=; Path=/; Max-Age=0` });
@@ -221,7 +231,12 @@ function handle(req, res, url, body) {
     if (!host) return send(res, 400, shell('Bad host', '<p class="err">That is not a valid hostname.</p><p><a href="/admin">Back</a></p>'));
     const existing = store.read(host);
     if (existing) return send(res, 200, editPage(host, { content: existing.content, version: existing.version }));
-    return send(res, 200, editPage(host, { content: starter(host), version: '', isNew: true }));
+    // The hostname is required — it is the filename and the routing key. A
+    // title is not: it only fills <title> and the list, and falls back to the
+    // hostname. Offering the field saves editing the frontmatter afterwards.
+    return send(res, 200, editPage(host, {
+      content: starter(host, url.searchParams.get('title')), version: '', isNew: true
+    }));
   }
 
   if (p === '/admin/save' && req.method === 'POST') {
@@ -252,9 +267,9 @@ function handle(req, res, url, body) {
   return send(res, 404, shell('Not found', '<p class="note">No such page. <a href="/admin">All sites</a></p>'));
 }
 
-function starter(host) {
+function starter(host, title) {
   return `---
-title: "${host}"
+title: "${(title || host).replace(/"/g, "'")}"
 description: ""
 theme: default
 ---

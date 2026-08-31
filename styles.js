@@ -59,5 +59,28 @@ blockquote { margin: 0 0 1.1em; padding-left: 1rem; border-left: 3px solid var(-
 .btn-ghost, .btn-secondary { background: transparent; color: var(--accent); }
 .btn:hover { opacity: .88; }
 
+.card-grid {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr));
+  gap: 1rem; margin-top: 1.75rem;
+}
+.card {
+  position: relative; border: 1px solid var(--line); border-radius: 14px;
+  padding: 1.15rem 1.2rem 1rem; background: var(--soft);
+  display: flex; flex-direction: column; gap: .2rem;
+}
+.card-link { text-decoration: none; color: inherit; }
+.card-link[aria-disabled="true"] { pointer-events: none; opacity: .65; }
+.card h3 { font-size: 1.02rem; margin: 0 0 .2rem; letter-spacing: -.01em; }
+.card-host { font-family: ui-monospace, Menlo, Consolas, monospace; font-size: .8rem; color: var(--accent); margin: 0 0 .5rem; max-width: none; }
+.card-meta { font-size: .76rem; color: var(--muted); margin: auto 0 0; max-width: none; }
+.card-edit { font-size: .78rem; margin-top: .55rem; font-weight: 600; }
+.card-del { position: absolute; top: .5rem; right: .55rem; margin: 0; }
+.card-del button {
+  background: transparent; border: 1px solid var(--line); color: var(--muted);
+  width: 26px; height: 26px; border-radius: 8px; cursor: pointer; line-height: 1; font-size: 1rem;
+}
+.card-del button:hover { border-color: #ef4444; color: #ef4444; }
+.note { color: var(--muted); }
+
 footer { max-width: var(--wide); margin: 0 auto; padding: 2.5rem 1.25rem 4rem; color: var(--muted); font-size: .85rem; }
 `;

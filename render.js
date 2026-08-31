@@ -6,6 +6,7 @@
 // directives at all — that is the floor we never want to fall below.
 
 const { marked } = require('marked');
+const store = require('./store');
 
 marked.setOptions({ mangle: false, headerIds: false });
 
@@ -115,17 +116,63 @@ const renderers = {
   text(b) {
     const { actions, rest } = extractActions(b.body);
     return `<section class="block text">${md(rest)}${actionsHtml(actions)}</section>`;
+  },
+
+  // A directory of every site the hotel serves. It is a directive rather than
+  // a hardcoded page so a landing page opts in — a customer's site should not
+  // list its neighbours just because it lives in the same container.
+  sites(b, ctx = {}) {
+    const all = store.list().filter(s => s.host !== 'default');
+    const domains = store.configuredDomains();
+    const hidden = new Set(String(b.attrs.hide || '').split(/[,\s]+/).filter(Boolean));
+    const list = all.filter(s => !hidden.has(s.host));
+
+    const heading = b.attrs.title ? `<h2>${escapeHtml(b.attrs.title)}</h2>` : '';
+    const intro = b.body.trim() ? md(b.body) : '';
+
+    if (!list.length) {
+      return `<section class="block sites">${heading}${intro}<p class="note">No sites yet.</p></section>`;
+    }
+
+    const cards = list.map(s => {
+      const live = domains.length === 0 || domains.includes(s.host);
+      // Only a signed-in admin is offered the destructive action, and the
+      // form posts to the admin route, which checks the session again. The
+      // button being hidden is a courtesy, not the control.
+      const remove = ctx.isAdmin
+        ? `<form method="post" action="/admin/delete" class="card-del"
+             onsubmit="return confirm('Delete ${escapeHtml(s.host)}? The file is removed for good.')">
+             <input type="hidden" name="host" value="${escapeHtml(s.host)}">
+             <button type="submit" title="Delete this site">×</button>
+           </form>`
+        : '';
+      const edit = ctx.isAdmin
+        ? `<a class="card-edit" href="/admin/edit?host=${encodeURIComponent(s.host)}">Edit</a>`
+        : '';
+      const href = live ? `https://${s.host}/` : `#`;
+      return `<article class="card">
+        ${remove}
+        <a class="card-link" href="${escapeHtml(href)}"${live ? '' : ' aria-disabled="true"'}>
+          <h3>${escapeHtml(s.title || s.host)}</h3>
+          <p class="card-host">${escapeHtml(s.host)}</p>
+        </a>
+        <p class="card-meta">${(s.bytes / 1024).toFixed(1)} kB · ${escapeHtml(s.updated.slice(0, 10))}${live ? '' : ' · not routed'}</p>
+        ${edit}
+      </article>`;
+    }).join('');
+
+    return `<section class="block sites">${heading}${intro}<div class="card-grid">${cards}</div></section>`;
   }
 };
 
 renderers['two-column'] = renderers.split;
 
-function renderBlocks(blocks) {
+function renderBlocks(blocks, ctx = {}) {
   return blocks.map(b => {
     const fn = renderers[b.type];
     // An unknown directive renders as text rather than vanishing. A typo in a
     // block name should cost you the layout, never the words.
-    return fn ? fn(b) : renderers.text(b);
+    return fn ? fn(b, ctx) : renderers.text(b, ctx);
   }).join('\n');
 }
 

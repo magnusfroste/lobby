@@ -134,8 +134,9 @@ const server = http.createServer((req, res) => {
   try {
     const src = fs.readFileSync(file, 'utf8');
     const { meta, body } = parseFrontmatter(src);
-    const html = renderBlocks(parseBlocks(body));
-    const editable = admin.enabled() && admin.isLoggedIn(req)
+    const isAdmin = admin.enabled() && admin.isLoggedIn(req);
+    const html = renderBlocks(parseBlocks(body), { isAdmin });
+    const editable = isAdmin
       ? `<a href="/admin/edit?host=${encodeURIComponent(path.basename(file, '.md'))}" style="position:fixed;right:1rem;bottom:1rem;z-index:9;background:#111;color:#fff;padding:.55rem 1rem;border-radius:999px;text-decoration:none;font:600 14px/1 ui-sans-serif,system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.3)">Edit this page</a>`
       : '';
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
