@@ -2,7 +2,7 @@
 title: "Nordkust Bageri — surdeg sedan 1997"
 description: "A third site on the same container, written as one markdown file."
 theme: warm
-footer: "Nordkust Bageri · kund2.froste.eu.md"
+footer: "Nordkust Bageri · nordkust.pezcms.com.md"
 ---
 
 ::hero{eyebrow="third guest, same container"}
