@@ -63,12 +63,27 @@ function findSiteFile(host) {
   return null;
 }
 
-// Behind Cloudflare and Caddy the request arrives as plain HTTP, so the
-// scheme has to come from the forwarded header or every canonical URL would
-// advertise the wrong protocol.
+// Which scheme belongs in a canonical URL.
+//
+// The forwarded header is the right answer when there is one, but behind a
+// Cloudflare tunnel there often is not: TLS terminates at the edge, cloudflared
+// speaks plain HTTP to Caddy, and Caddy forwards the scheme it actually saw.
+// The page then advertised http:// to every crawler — invisible in a browser,
+// because Cloudflare rewrites href attributes to https and leaves meta content
+// alone, so the canonical link looked right while og:url did not.
+//
+// So a request for a real hostname is assumed to be https, which is true of
+// every site this serves; only localhost and bare IPs fall back to http.
+// CANONICAL_SCHEME overrides both for anyone running it plainly.
 function scheme(req) {
+  const forced = (process.env.CANONICAL_SCHEME || '').trim();
+  if (forced) return forced;
   const fwd = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
-  return fwd || (req.socket.encrypted ? 'https' : 'http');
+  if (fwd) return fwd;
+  if (req.socket.encrypted) return 'https';
+  const host = String(req.headers.host || '').split(':')[0];
+  const local = host === 'localhost' || host === '127.0.0.1' || /^\d+(\.\d+){3}$/.test(host) || !host.includes('.');
+  return local ? 'http' : 'https';
 }
 
 function page(meta, bodyHtml, siteName, opts = {}) {
