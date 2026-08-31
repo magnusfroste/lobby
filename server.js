@@ -63,9 +63,24 @@ function findSiteFile(host) {
   return null;
 }
 
-function page(meta, bodyHtml, siteName) {
+// Behind Cloudflare and Caddy the request arrives as plain HTTP, so the
+// scheme has to come from the forwarded header or every canonical URL would
+// advertise the wrong protocol.
+function scheme(req) {
+  const fwd = String(req.headers['x-forwarded-proto'] || '').split(',')[0].trim();
+  return fwd || (req.socket.encrypted ? 'https' : 'http');
+}
+
+function page(meta, bodyHtml, siteName, opts = {}) {
   const title = meta.title || siteName;
   const desc = meta.description || '';
+  // The canonical URL settles which address is the page. Without it a site
+  // reachable as both example.com and www.example.com looks like two pages
+  // with the same words, which is the one SEO mistake this format could
+  // otherwise not make.
+  const canonical = opts.canonical || '';
+  const image = meta.image || '';
+  const noindex = String(meta.noindex || '').toLowerCase() === 'true' || opts.noindex;
   return `<!doctype html>
 <html lang="${escapeHtml(meta.lang || 'en')}">
 <head>
@@ -73,8 +88,14 @@ function page(meta, bodyHtml, siteName) {
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escapeHtml(title)}</title>
 ${desc ? `<meta name="description" content="${escapeHtml(desc)}">` : ''}
+${canonical ? `<link rel="canonical" href="${escapeHtml(canonical)}">` : ''}
+${noindex ? '<meta name="robots" content="noindex">' : ''}
+<meta property="og:type" content="website">
 <meta property="og:title" content="${escapeHtml(title)}">
 ${desc ? `<meta property="og:description" content="${escapeHtml(desc)}">` : ''}
+${canonical ? `<meta property="og:url" content="${escapeHtml(canonical)}">` : ''}
+${image ? `<meta property="og:image" content="${escapeHtml(image)}">` : ''}
+<meta name="twitter:card" content="${image ? 'summary_large_image' : 'summary'}">
 <style>${styles}</style>
 <style>${themeCss(meta.theme)}</style>
 </head>
@@ -100,7 +121,7 @@ function notFound(req, res) {
     ${canCreate ? `<p class="actions"><a class="btn btn-primary" href="/admin/edit?host=${encodeURIComponent(host)}&new=1">Create this site</a></p>` : ''}
   </section>`;
   res.writeHead(404, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-store' });
-  res.end(page({ title: `No site for ${host}` }, body, host));
+  res.end(page({ title: `No site for ${host}` }, body, host, { noindex: true }));
 }
 
 const server = http.createServer((req, res) => {
@@ -141,12 +162,38 @@ const server = http.createServer((req, res) => {
   const file = findSiteFile(req.headers.host);
   if (!file) return notFound(req, res);
 
+  const host = path.basename(file, '.md');
+  const base = `${scheme(req)}://${host}`;
+
+  if (url.pathname === '/robots.txt') {
+    res.writeHead(200, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end(`User-agent: *\nAllow: /\nDisallow: /admin\nSitemap: ${base}/sitemap.xml\n`);
+  }
+
+  // One host, one page — so the sitemap is short. It exists anyway, because a
+  // crawler that finds one tells the next.
+  if (url.pathname === '/sitemap.xml') {
+    let lastmod = '';
+    try { lastmod = fs.statSync(file).mtime.toISOString().slice(0, 10); } catch (e) {}
+    res.writeHead(200, { 'Content-Type': 'application/xml; charset=utf-8' });
+    return res.end(`<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>${base}/</loc>${lastmod ? `<lastmod>${lastmod}</lastmod>` : ''}</url>
+</urlset>
+`);
+  }
+
   // Serving the source verbatim is the point of the format, not a debug hatch:
   // an agent or an LLM reads the same text a human edits.
   if (url.pathname === '/site.md') {
     res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8' });
     return res.end(fs.readFileSync(file));
   }
+
+  // A site is one page. Serving it at every path produced an unlimited supply
+  // of URLs that all answered 200 with the same words — duplicate content by
+  // construction, and no way for anything to be genuinely missing.
+  if (url.pathname !== '/') return notFound(req, res);
 
   try {
     const src = fs.readFileSync(file, 'utf8');
@@ -156,8 +203,11 @@ const server = http.createServer((req, res) => {
     const editable = isAdmin
       ? `<a href="/admin/edit?host=${encodeURIComponent(path.basename(file, '.md'))}" style="position:fixed;right:1rem;bottom:1rem;z-index:9;background:#111;color:#fff;padding:.55rem 1rem;border-radius:999px;text-decoration:none;font:600 14px/1 ui-sans-serif,system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.3)">Edit this page</a>`
       : '';
+    const host = siteNameFor(req.headers.host);
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
-    res.end(page(meta, html + editable, path.basename(file, '.md')));
+    res.end(page(meta, html + editable, path.basename(file, '.md'), {
+      canonical: host ? `${scheme(req)}://${path.basename(file, '.md')}/` : ''
+    }));
   } catch (err) {
     console.error(`[render] ${file}: ${err.message}`);
     res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });

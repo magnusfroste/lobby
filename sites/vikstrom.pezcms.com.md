@@ -1,6 +1,7 @@
 ---
 title: "Vik & Ström — advokatbyrå i Stockholm"
 description: "Affärsjuridik för mindre bolag. Fast pris på det som går att prissätta fast."
+lang: sv
 theme: editorial
 footer: "Vik & Ström Advokatbyrå AB · vikstrom.pezcms.com.md"
 ---

@@ -205,6 +205,24 @@ read before you edit.
 Files in the image's `/seed` are copied into `SITES_DIR` only when a name is
 missing, so a redeploy never overwrites a site you have edited.
 
+## SEO
+
+The pages are server-rendered with no client JavaScript, which is the part
+that matters most: a crawler or a language model gets the words on the first
+request without running anything. On top of that each site emits a canonical
+URL, Open Graph and Twitter card tags, `robots.txt` and a `sitemap.xml`, and
+returns a real 404 for anything that is not its one page.
+
+Frontmatter carries the rest:
+
+| Key | Effect |
+| --- | --- |
+| `title` | `<title>`, `og:title` |
+| `description` | meta description, `og:description` |
+| `lang` | the `lang` attribute — set it, the default is `en` |
+| `image` | `og:image`, and upgrades the Twitter card to a large image |
+| `noindex: true` | keeps a site out of search results |
+
 ## Notes
 
 - The hostname reaches the filesystem, so it is validated rather than trusted:
