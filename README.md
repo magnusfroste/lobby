@@ -70,6 +70,9 @@ docker build -t lobby . && docker run -p 8080:8080 lobby
 | `SITES_DIR` | `/sites` | Where the markdown files live |
 | `DEFAULT_SITE` | `default` | File served when no hostname matches |
 | `LOBBY_API_TOKEN` | *(unset)* | Bearer token for `/mcp`. Unset means the endpoint is off |
+| `LOBBY_ADMIN_PASSWORD` | *(unset)* | Password for `/admin`. Unset means the admin is off |
+| `LOBBY_ADMIN_USER` | `admin` | Admin username |
+| `AGENTHOTEL_DOMAINS` | *(unset)* | Hostnames routed here, so the admin can show which sites are live |
 
 ## Themes
 
@@ -84,6 +87,25 @@ the same page in different colours and an agent picking one is guessing.
 | `brutalist` | Heavy rules above every block, no rounded corners |
 | `warm` | Pill buttons and a tinted hero |
 | `midnight` | Dark by default, glowing hairline under the hero |
+
+## Admin
+
+`/admin` is the human half of the same job: a list of every site, click one to
+edit its markdown, save. Agents write over MCP, people click here, and both go
+through the same store — an agent's change shows up in the editor immediately.
+
+Set `LOBBY_ADMIN_PASSWORD` to turn it on. Signed in, every site also carries an
+**Edit this page** button, so you can go from reading a page to fixing its
+typo without finding it in a list.
+
+The list marks a site **live** when a hostname is actually routed here, and
+warns when a routed hostname has **no file** — a visitor gets the default site
+and nothing looks broken, which makes it the hardest failure to notice. That
+comparison is why the container is told its own domains.
+
+Writes are atomic and versioned. When an agent saves a site while you have it
+open, saving refuses with a conflict rather than silently discarding their
+work; your text stays in the editor so you can decide.
 
 ## MCP — letting an agent run the hotel
 

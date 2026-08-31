@@ -11,6 +11,8 @@ const { parseFrontmatter, parseBlocks, renderBlocks, escapeHtml } = require('./r
 const styles = require('./styles');
 const { themeCss } = require('./themes');
 const mcp = require('./mcp');
+const admin = require('./admin');
+const store = require('./store');
 
 const SITES_DIR = process.env.SITES_DIR || path.join(__dirname, 'sites');
 const SEED_DIR = '/seed';
@@ -84,6 +86,15 @@ ${meta.footer ? `<footer>${escapeHtml(meta.footer)}</footer>` : ''}
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
 
+  // The human half of the same job. Agents write over /mcp, people click here,
+  // and both go through the same store so neither has a private copy.
+  if (url.pathname === '/admin' || url.pathname.startsWith('/admin/')) {
+    let body = '';
+    req.on('data', c => { body += c; if (body.length > 2_000_000) req.destroy(); });
+    req.on('end', () => admin.handle(req, res, url, body));
+    return;
+  }
+
   // An agent operates the hotel here. It is host-independent on purpose: the
   // endpoint manages every site, so which hostname the request arrived on is
   // irrelevant.
@@ -124,8 +135,11 @@ const server = http.createServer((req, res) => {
     const src = fs.readFileSync(file, 'utf8');
     const { meta, body } = parseFrontmatter(src);
     const html = renderBlocks(parseBlocks(body));
+    const editable = admin.enabled() && admin.isLoggedIn(req)
+      ? `<a href="/admin/edit?host=${encodeURIComponent(path.basename(file, '.md'))}" style="position:fixed;right:1rem;bottom:1rem;z-index:9;background:#111;color:#fff;padding:.55rem 1rem;border-radius:999px;text-decoration:none;font:600 14px/1 ui-sans-serif,system-ui,sans-serif;box-shadow:0 4px 14px rgba(0,0,0,.3)">Edit this page</a>`
+      : '';
     res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
-    res.end(page(meta, html, path.basename(file, '.md')));
+    res.end(page(meta, html + editable, path.basename(file, '.md')));
   } catch (err) {
     console.error(`[render] ${file}: ${err.message}`);
     res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });

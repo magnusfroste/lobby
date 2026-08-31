@@ -8,9 +8,8 @@
 // Writing a site is publishing it, so the endpoint is off unless a token is
 // set. A world-writable CMS is not a default anyone should get by accident.
 
-const fs = require('fs');
-const path = require('path');
 const { listThemes } = require('./themes');
+const store = require('./store');
 
 const PROTOCOL = '2024-11-05';
 
@@ -33,7 +32,8 @@ const TOOLS = {
       type: 'object',
       properties: {
         host: { type: 'string', description: 'Hostname, e.g. acme.com' },
-        content: { type: 'string', description: 'The complete markdown source' }
+        content: { type: 'string', description: 'The complete markdown source' },
+        if_version: { type: 'string', description: "Optional. The version from read_site — the write is refused if someone else saved in the meantime, instead of quietly overwriting them" }
       },
       required: ['host', 'content']
     }
@@ -64,47 +64,31 @@ function safeHost(host) {
 function ok(result) { return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }; }
 function fail(message) { return { content: [{ type: 'text', text: JSON.stringify({ error: message }) }], isError: true }; }
 
-function callTool(name, args, sitesDir) {
-  const file = (host) => path.join(sitesDir, `${host}.md`);
-
+function callTool(name, args) {
   switch (name) {
-    case 'list_sites': {
-      const sites = fs.readdirSync(sitesDir)
-        .filter(f => f.endsWith('.md'))
-        .map(f => {
-          const host = f.slice(0, -3);
-          const st = fs.statSync(path.join(sitesDir, f));
-          return { host, file: f, bytes: st.size, updated: st.mtime.toISOString() };
-        });
-      return ok({ sites });
-    }
+    case 'list_sites':
+      return ok({ sites: store.list(), domains: store.configuredDomains() });
 
     case 'read_site': {
-      const host = safeHost(args.host);
-      if (!host) return fail('Invalid host');
-      if (!fs.existsSync(file(host))) return fail(`No site for ${host}`);
-      return ok({ host, content: fs.readFileSync(file(host), 'utf8') });
+      const site = store.read(args.host);
+      if (!site) return fail(`No site for ${args.host}`);
+      // The version comes back so a careful writer can pass it to write_site
+      // and be told about a clash instead of quietly winning one.
+      return ok(site);
     }
 
     case 'write_site': {
-      const host = safeHost(args.host);
-      if (!host) return fail('Invalid host');
-      if (typeof args.content !== 'string' || !args.content.trim()) return fail('content must be a non-empty string');
-      const existed = fs.existsSync(file(host));
-      fs.writeFileSync(file(host), args.content);
+      const result = store.write(args.host, args.content, args.if_version);
       return ok({
-        host, created: !existed, bytes: Buffer.byteLength(args.content),
-        note: existed ? 'Replaced' : 'Created — point the hostname at this hotel to serve it'
+        ...result,
+        note: result.created ? 'Created — point the hostname at this hotel to serve it' : 'Replaced'
       });
     }
 
-    case 'delete_site': {
-      const host = safeHost(args.host);
-      if (!host) return fail('Invalid host');
-      if (!fs.existsSync(file(host))) return fail(`No site for ${host}`);
-      fs.unlinkSync(file(host));
-      return ok({ host, deleted: true });
-    }
+    case 'delete_site':
+      return store.remove(args.host)
+        ? ok({ host: args.host, deleted: true })
+        : fail(`No site for ${args.host}`);
 
     case 'list_themes':
       return ok({ themes: listThemes() });
@@ -149,7 +133,13 @@ function handle(req, res, body, { sitesDir, token }) {
       case 'tools/list':
         return reply({ tools: Object.entries(TOOLS).map(([name, t]) => ({ name, ...t })) });
       case 'tools/call':
-        return reply(callTool(rpc.params?.name, rpc.params?.arguments || {}, sitesDir));
+        try {
+          return reply(callTool(rpc.params?.name, rpc.params?.arguments || {}));
+        } catch (err) {
+          // A stale write is a normal outcome an agent should handle, not a
+          // server fault — say which version is current so it can re-read.
+          return reply(fail(err.conflict ? `${err.message} (current version ${err.currentVersion})` : err.message));
+        }
       case 'notifications/initialized':
         return reply({});
       default:
