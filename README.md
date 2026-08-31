@@ -1,7 +1,7 @@
 # Lobby
 
-A hotel for landing pages. One process, many domains — each site is a single
-markdown file.
+**A hotel for landing pages.** One process, many domains — each site is a
+single markdown file.
 
 ```
 acme.com       → sites/acme.com.md
@@ -11,7 +11,34 @@ otherbrand.io  → sites/otherbrand.io.md
 The request's `Host` decides which file is the site, the same way a reverse
 proxy picks a backend by hostname. There is no database: publishing is writing
 a file, backing up is copying a folder, and the source a human edits is the
-source an LLM reads.
+source a language model reads.
+
+Point a wildcard at it and there is no per-site setup left at all. Adding a
+customer is one file — no DNS record, no config entry, no redeploy:
+
+```bash
+curl -X POST https://lobby.example.com/mcp \
+  -H "Authorization: Bearer $LOBBY_API_TOKEN" \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{
+        "name":"write_site",
+        "arguments":{"host":"newcustomer.example.com","content":"---\ntitle: Hello\n---\n\n::hero\n# Live.\n::"}}}'
+```
+
+That call takes about 150 ms, and the site is serving when it returns.
+
+## Why it is like this
+
+- **Files, not a database.** A database buys transactions and indexes that a
+  hundred landing pages never need, and costs the thing that makes the format
+  worth using. The one real risk files carry — two writers clobbering — is
+  handled where it lives: writes are atomic and versioned, so a stale save is
+  refused rather than quietly winning.
+- **Rendered on the server, no client JavaScript.** Not minimalism for its own
+  sake. The point is that crawlers and language models read the page, so the
+  page has to exist without running anything.
+- **Agents and people share one store.** An agent writing over MCP and a human
+  clicking in `/admin` edit the same file, so neither works from a private copy
+  of the truth.
 
 ## The format
 
@@ -190,6 +217,18 @@ missing, so a redeploy never overwrites a site you have edited.
   catch-all.
 - No client-side JavaScript. The page renders on arrival, which is what makes
   it readable by crawlers and language models.
+
+## Running it on AgentHotel
+
+Lobby is built to be checked in as a guest of
+[AgentHotel](https://github.com/magnusfroste/agenthotel): pick the **Git App**
+runtime, give it this repository, port `8080`, and a health check path of
+`/healthz`. Set `DOMAIN_ALIASES` to `*.example.com` and the panel writes the
+wildcard route for you; it also passes `AGENTHOTEL_DOMAINS` in, which is what
+lets the admin tell a live site from an unrouted one.
+
+Nothing here depends on it — Lobby is an ordinary container with two
+environment variables and a volume.
 
 ## Credits
 
