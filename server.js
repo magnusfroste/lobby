@@ -1,0 +1,115 @@
+// A hotel for landing pages: one process, many domains.
+//
+// The request's Host decides which markdown file is the site, exactly the way
+// AgentHotel's Caddy picks a guest by hostname. There is no database — a site
+// is a file, so publishing is writing one, and backing up is copying a folder.
+
+const http = require('http');
+const fs = require('fs');
+const path = require('path');
+const { parseFrontmatter, parseBlocks, renderBlocks, escapeHtml } = require('./render');
+const styles = require('./styles');
+
+const SITES_DIR = process.env.SITES_DIR || path.join(__dirname, 'sites');
+const SEED_DIR = '/seed';
+const PORT = parseInt(process.env.PORT) || 8080;
+const DEFAULT_SITE = process.env.DEFAULT_SITE || 'default';
+
+// The sites folder is a volume, so it starts empty on a fresh deploy. Copying
+// the seed in only when a name is missing means an edited site is never
+// overwritten by a redeploy.
+function seedSites() {
+  if (!fs.existsSync(SITES_DIR)) fs.mkdirSync(SITES_DIR, { recursive: true });
+  if (!fs.existsSync(SEED_DIR)) return;
+  for (const name of fs.readdirSync(SEED_DIR)) {
+    const dest = path.join(SITES_DIR, name);
+    if (!fs.existsSync(dest)) fs.copyFileSync(path.join(SEED_DIR, name), dest);
+  }
+}
+
+// A hostname reaches the filesystem, so it is treated as hostile: lowercased,
+// port stripped, and restricted to what a domain may actually contain. Without
+// this a Host header of "../../etc/passwd" is a file read.
+function siteNameFor(host) {
+  const bare = String(host || '').toLowerCase().split(':')[0].replace(/\.$/, '');
+  if (!/^[a-z0-9.-]+$/.test(bare) || bare.includes('..')) return null;
+  return bare;
+}
+
+function findSiteFile(host) {
+  const name = siteNameFor(host);
+  const candidates = [];
+  if (name) {
+    candidates.push(`${name}.md`);
+    // www.example.com falls back to example.com, so one file serves both.
+    if (name.startsWith('www.')) candidates.push(`${name.slice(4)}.md`);
+  }
+  candidates.push(`${DEFAULT_SITE}.md`);
+  for (const c of candidates) {
+    const p = path.join(SITES_DIR, c);
+    if (fs.existsSync(p) && fs.statSync(p).isFile()) return p;
+  }
+  return null;
+}
+
+function page(meta, bodyHtml, siteName) {
+  const title = meta.title || siteName;
+  const desc = meta.description || '';
+  return `<!doctype html>
+<html lang="${escapeHtml(meta.lang || 'en')}">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>${escapeHtml(title)}</title>
+${desc ? `<meta name="description" content="${escapeHtml(desc)}">` : ''}
+<meta property="og:title" content="${escapeHtml(title)}">
+${desc ? `<meta property="og:description" content="${escapeHtml(desc)}">` : ''}
+<style>${styles}</style>
+</head>
+<body>
+<main>
+${bodyHtml}
+</main>
+${meta.footer ? `<footer>${escapeHtml(meta.footer)}</footer>` : ''}
+</body>
+</html>`;
+}
+
+const server = http.createServer((req, res) => {
+  const url = new URL(req.url, 'http://localhost');
+
+  if (url.pathname === '/healthz') {
+    res.writeHead(200, { 'Content-Type': 'text/plain' });
+    return res.end('ok\n');
+  }
+
+  const file = findSiteFile(req.headers.host);
+  if (!file) {
+    res.writeHead(404, { 'Content-Type': 'text/plain; charset=utf-8' });
+    return res.end(`No site for ${req.headers.host || 'this host'}\n`);
+  }
+
+  // Serving the source verbatim is the point of the format, not a debug hatch:
+  // an agent or an LLM reads the same text a human edits.
+  if (url.pathname === '/site.md') {
+    res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8' });
+    return res.end(fs.readFileSync(file));
+  }
+
+  try {
+    const src = fs.readFileSync(file, 'utf8');
+    const { meta, body } = parseFrontmatter(src);
+    const html = renderBlocks(parseBlocks(body));
+    res.writeHead(200, { 'Content-Type': 'text/html; charset=utf-8', 'Cache-Control': 'no-cache' });
+    res.end(page(meta, html, path.basename(file, '.md')));
+  } catch (err) {
+    console.error(`[render] ${file}: ${err.message}`);
+    res.writeHead(500, { 'Content-Type': 'text/plain; charset=utf-8' });
+    res.end('Could not render this site\n');
+  }
+});
+
+seedSites();
+server.listen(PORT, '0.0.0.0', () => {
+  console.log(`markdown-hotel listening on ${PORT}, sites in ${SITES_DIR}`);
+});
