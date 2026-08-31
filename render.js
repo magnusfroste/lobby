@@ -87,6 +87,52 @@ function md(src) {
   return marked.parse(src || '');
 }
 
+
+// Several blocks are lists of small records. Written as markdown lists so the
+// file still reads as prose, in two shapes:
+//
+//   - Label → /href                       (nav, footer: a link)
+//   - title: Agents author                (features, pricing, faq: fields)
+//     body: MCP exposes 40+ skills
+//
+// Deliberately not YAML. These are a handful of one-line values, and a real
+// parser would be the largest dependency in the project for no gain.
+function parseItems(body) {
+  const items = [];
+  let current = null;
+  for (const raw of String(body || '').split(/\r?\n/)) {
+    const line = raw.trimEnd();
+    if (!line.trim()) continue;
+
+    const start = /^\s*-\s+(.*)$/.exec(line);
+    if (start) {
+      current = {};
+      items.push(current);
+      const kv = /^([A-Za-z][A-Za-z0-9_]*)\s*:\s*(.*)$/.exec(start[1]);
+      if (kv) { current[kv[1].toLowerCase()] = kv[2].trim(); continue; }
+      // "Label → /href" or "Label -> /href"
+      const link = /^(.*?)\s*(?:→|->)\s*(\S+)$/.exec(start[1]);
+      if (link) { current.label = link[1].trim(); current.href = link[2].trim(); continue; }
+      current.label = start[1].trim();
+      continue;
+    }
+
+    const cont = /^\s+([A-Za-z][A-Za-z0-9_]*)\s*:\s*(.*)$/.exec(line);
+    if (cont && current) { current[cont[1].toLowerCase()] = cont[2].trim(); continue; }
+    // A plain continuation line extends whichever field came last.
+    if (current) {
+      const keys = Object.keys(current);
+      if (keys.length) current[keys[keys.length - 1]] += ' ' + line.trim();
+    }
+  }
+  return items;
+}
+
+function inline(text) {
+  // marked wraps a lone line in <p>; inside a card that is unwanted markup.
+  return md(text).replace(/^<p>|<\/p>\s*$/g, '').trim();
+}
+
 const renderers = {
   hero(b) {
     const { actions, rest } = extractActions(b.body);
@@ -117,6 +163,88 @@ const renderers = {
     const { actions, rest } = extractActions(b.body);
     return `<section class="block text">${md(rest)}${actionsHtml(actions)}</section>`;
   },
+
+  // A landing page usually has a header. Sticky, because a long page without
+  // one strands the reader at the bottom.
+  nav(b) {
+    const brand = b.attrs.brand
+      ? `<a class="nav-brand" href="${escapeHtml(b.attrs.home || '/')}">${escapeHtml(b.attrs.brand)}</a>` : '';
+    const links = parseItems(b.body)
+      .filter(i => i.label)
+      .map(i => `<a href="${escapeHtml(i.href || '#')}">${escapeHtml(i.label)}</a>`)
+      .join('');
+    return `<nav class="site-nav"><div class="nav-inner">${brand}<div class="nav-links">${links}</div></div></nav>`;
+  },
+
+  features(b) {
+    const cols = Math.min(4, Math.max(2, parseInt(b.attrs.columns) || 3));
+    const heading = b.attrs.title ? `<h2>${escapeHtml(b.attrs.title)}</h2>` : '';
+    const cards = parseItems(b.body).map(i => `<div class="feature">
+      ${i.icon ? `<div class="feature-icon">${escapeHtml(i.icon)}</div>` : ''}
+      <h3>${escapeHtml(i.title || i.label || '')}</h3>
+      ${i.body ? `<p>${inline(i.body)}</p>` : ''}
+    </div>`).join('');
+    return `<section class="block features">${heading}<div class="feature-grid" style="--cols:${cols}">${cards}</div></section>`;
+  },
+
+  stats(b) {
+    const heading = b.attrs.title ? `<h2>${escapeHtml(b.attrs.title)}</h2>` : '';
+    const cells = parseItems(b.body).map(i => `<div class="stat">
+      <div class="stat-value">${escapeHtml(i.value || '')}</div>
+      <div class="stat-label">${escapeHtml(i.label || '')}</div>
+    </div>`).join('');
+    return `<section class="block stats">${heading}<div class="stat-row">${cells}</div></section>`;
+  },
+
+  quote(b) {
+    const who = [b.attrs.by, b.attrs.role].filter(Boolean).map(escapeHtml).join(' · ');
+    return `<section class="block quote"><blockquote>${md(b.body)}</blockquote>${
+      who ? `<p class="quote-by">${who}</p>` : ''}</section>`;
+  },
+
+  // Prices are the part of a page people scan hardest, so each tier is a card
+  // and one may be marked featured. Features are semicolon-separated because a
+  // nested list inside a list item is where this format would start fighting
+  // the reader.
+  pricing(b) {
+    const heading = b.attrs.title ? `<h2>${escapeHtml(b.attrs.title)}</h2>` : '';
+    const cards = parseItems(b.body).map(i => {
+      const feats = String(i.features || '').split(';').map(f => f.trim()).filter(Boolean)
+        .map(f => `<li>${inline(f)}</li>`).join('');
+      const cta = i.cta
+        ? `<p class="actions"><a class="btn ${i.featured === 'true' ? 'btn-primary' : 'btn-ghost'}" href="${escapeHtml(i.href || '#')}">${escapeHtml(i.cta)}</a></p>`
+        : '';
+      return `<div class="tier${i.featured === 'true' ? ' tier-featured' : ''}">
+        <h3>${escapeHtml(i.name || '')}</h3>
+        <p class="tier-price">${escapeHtml(i.price || '')}<span>${escapeHtml(i.period || '')}</span></p>
+        ${i.body ? `<p class="tier-body">${inline(i.body)}</p>` : ''}
+        ${feats ? `<ul class="tier-feats">${feats}</ul>` : ''}${cta}
+      </div>`;
+    }).join('');
+    return `<section class="block pricing">${heading}<div class="tier-grid">${cards}</div></section>`;
+  },
+
+  // Plain <details> rather than scripted accordions: it opens without
+  // JavaScript, it is searchable in the page, and screen readers already know
+  // what it is.
+  faq(b) {
+    const heading = b.attrs.title ? `<h2>${escapeHtml(b.attrs.title)}</h2>` : '';
+    const rows = parseItems(b.body).map(i => `<details>
+      <summary>${escapeHtml(i.q || i.label || '')}</summary>
+      <div class="faq-a">${md(i.a || '')}</div>
+    </details>`).join('');
+    return `<section class="block faq">${heading}<div class="faq-list">${rows}</div></section>`;
+  },
+
+  footer(b) {
+    const links = parseItems(b.body).filter(i => i.label)
+      .map(i => `<a href="${escapeHtml(i.href || '#')}">${escapeHtml(i.label)}</a>`).join('');
+    return `<section class="block site-footer">
+      <div class="footer-links">${links}</div>
+      ${b.attrs.note ? `<p class="footer-note">${escapeHtml(b.attrs.note)}</p>` : ''}
+    </section>`;
+  },
+
 
   // A directory of every site the hotel serves. It is a directive rather than
   // a hardcoded page so a landing page opts in — a customer's site should not

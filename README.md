@@ -49,7 +49,47 @@ Every batch is pull-tested and stamped.
 | `::two-column` | Text beside an image. `reverse=true` flips it. Alias: `::split` |
 | `::cta` | A boxed invitation, centred |
 | `::text` | Everything else |
+| `::nav` | Sticky header. `brand=` names it, list items are `Label → /href` |
+| `::features` | Grid of icon, title and body. `columns=2..4` |
+| `::stats` | A row of numbers with labels |
+| `::quote` | A pull quote. `by=` and `role=` attribute it |
+| `::pricing` | Tiers as cards. `features:` is semicolon-separated, `featured: true` highlights one |
+| `::faq` | Question and answer pairs, rendered as native `<details>` |
+| `::footer` | Link row plus a `note=` line |
 | `::sites` | A card for every site this hotel serves. `title=` heads it, `hide=` omits hostnames |
+
+Blocks that hold several records take them as markdown lists, so the file still
+reads as prose:
+
+```markdown
+::features{columns=3 title="What it does"}
+- icon: ⚖️
+  title: The rules are kept for you
+  body: It objects *before* you publish, not after.
+- icon: 🔁
+  title: Shift swaps without a middleman
+  body: Staff post and take shifts in the app.
+::
+
+::pricing{title="Prices"}
+- name: Standard
+  price: 59 kr
+  period: /person/month
+  features: Everything in Small; Forecasting; Payroll export
+  cta: Try it free
+  href: mailto:hi@example.com
+  featured: true
+::
+
+::faq{title="Common questions"}
+- q: How long is the contract?
+  a: There isn't one. Monthly, cancel whenever.
+::
+```
+
+`::faq` renders native `<details>` rather than a scripted accordion: it opens
+without JavaScript, the answers are findable with the browser's own search, and
+screen readers already know what it is.
 
 `::sites` is a directive rather than a built-in page so a landing page opts in —
 a customer's site should not list its neighbours just because they share a
