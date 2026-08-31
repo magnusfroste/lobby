@@ -1,6 +1,7 @@
 ---
 title: "Lobby — every domain is one file"
 description: "One process serves many domains. Each landing page is a single markdown file: no database, no build step, no dashboard."
+theme: brutalist
 footer: "Lobby · running on AgentHotel · source at /site.md"
 ---
 

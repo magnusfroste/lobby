@@ -1,6 +1,7 @@
 ---
 title: "Tidvatten — schemaläggning för skiftarbete"
 description: "Lägg skiftschemat på tjugo minuter istället för en hel fredag. För vård, restaurang och industri."
+theme: midnight
 footer: "Tidvatten AB · kund3.froste.eu.md"
 ---
 

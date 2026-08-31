@@ -9,11 +9,16 @@ const fs = require('fs');
 const path = require('path');
 const { parseFrontmatter, parseBlocks, renderBlocks, escapeHtml } = require('./render');
 const styles = require('./styles');
+const { themeCss } = require('./themes');
+const mcp = require('./mcp');
 
 const SITES_DIR = process.env.SITES_DIR || path.join(__dirname, 'sites');
 const SEED_DIR = '/seed';
 const PORT = parseInt(process.env.PORT) || 8080;
 const DEFAULT_SITE = process.env.DEFAULT_SITE || 'default';
+// Writing a site publishes it, so the MCP endpoint stays closed until an
+// operator sets a token. Absent one there is nothing to guess at.
+const API_TOKEN = process.env.LOBBY_API_TOKEN || '';
 
 // The sites folder is a volume, so it starts empty on a fresh deploy. Copying
 // the seed in only when a name is missing means an edited site is never
@@ -65,6 +70,7 @@ ${desc ? `<meta name="description" content="${escapeHtml(desc)}">` : ''}
 <meta property="og:title" content="${escapeHtml(title)}">
 ${desc ? `<meta property="og:description" content="${escapeHtml(desc)}">` : ''}
 <style>${styles}</style>
+<style>${themeCss(meta.theme)}</style>
 </head>
 <body>
 <main>
@@ -77,6 +83,24 @@ ${meta.footer ? `<footer>${escapeHtml(meta.footer)}</footer>` : ''}
 
 const server = http.createServer((req, res) => {
   const url = new URL(req.url, 'http://localhost');
+
+  // An agent operates the hotel here. It is host-independent on purpose: the
+  // endpoint manages every site, so which hostname the request arrived on is
+  // irrelevant.
+  if (url.pathname === '/mcp') {
+    if (req.method !== 'POST') {
+      res.writeHead(405, { 'Content-Type': 'application/json', Allow: 'POST' });
+      return res.end(JSON.stringify({ error: 'POST a JSON-RPC request' }));
+    }
+    let body = '';
+    req.on('data', c => {
+      body += c;
+      // A CMS write is small. Anything enormous is a mistake or an attack.
+      if (body.length > 2_000_000) { req.destroy(); }
+    });
+    req.on('end', () => mcp.handle(req, res, body, { sitesDir: SITES_DIR, token: API_TOKEN }));
+    return;
+  }
 
   if (url.pathname === '/healthz') {
     res.writeHead(200, { 'Content-Type': 'text/plain' });

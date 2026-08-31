@@ -69,6 +69,43 @@ docker build -t lobby . && docker run -p 8080:8080 lobby
 | `PORT` | `8080` | Port to listen on |
 | `SITES_DIR` | `/sites` | Where the markdown files live |
 | `DEFAULT_SITE` | `default` | File served when no hostname matches |
+| `LOBBY_API_TOKEN` | *(unset)* | Bearer token for `/mcp`. Unset means the endpoint is off |
+
+## Themes
+
+Set `theme:` in frontmatter. Each theme is a palette, a typeface pairing and
+one signature detail you can recognise at a glance — without that, themes are
+the same page in different colours and an agent picking one is guessing.
+
+| Theme | Signature |
+| --- | --- |
+| `default` | None — the neutral baseline |
+| `editorial` | Drop cap on the first paragraph after a heading |
+| `brutalist` | Heavy rules above every block, no rounded corners |
+| `warm` | Pill buttons and a tinted hero |
+| `midnight` | Dark by default, glowing hairline under the hero |
+
+## MCP — letting an agent run the hotel
+
+`POST /mcp` speaks JSON-RPC 2.0 with a bearer token, the same shape as
+AgentHotel's own endpoint. Five tools, because a site is a file:
+`list_sites`, `read_site`, `write_site`, `delete_site`, `list_themes`.
+
+```json
+{
+  "mcpServers": {
+    "lobby": {
+      "url": "https://lobby.example.com/mcp",
+      "headers": { "Authorization": "Bearer YOUR_TOKEN" }
+    }
+  }
+}
+```
+
+Writing a site publishes it, so the endpoint stays closed until
+`LOBBY_API_TOKEN` is set — a world-writable CMS is not a default anyone should
+get by accident. `write_site` replaces the whole file rather than merging, so
+read before you edit.
 
 Files in the image's `/seed` are copied into `SITES_DIR` only when a name is
 missing, so a redeploy never overwrites a site you have edited.

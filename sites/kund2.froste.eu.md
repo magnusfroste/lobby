@@ -1,6 +1,7 @@
 ---
 title: "Nordkust Bageri — surdeg sedan 1997"
 description: "A third site on the same container, written as one markdown file."
+theme: warm
 footer: "Nordkust Bageri · kund2.froste.eu.md"
 ---
 
